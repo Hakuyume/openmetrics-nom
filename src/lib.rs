@@ -43,6 +43,7 @@ pub const LF: char = '\n';
 
 // https://github.com/prometheus/OpenMetrics/blob/main/specification/OpenMetrics.md#abnf
 
+#[derive(Clone, Debug, PartialEq)]
 pub struct Exposition<I> {
     pub consumed: I,
     pub metricset: Metricset<I>,
@@ -107,7 +108,7 @@ where
     .parse(input)
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub enum MetricDescriptor<I> {
     Type {
         consumed: I,
