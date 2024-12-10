@@ -3,11 +3,11 @@ use nom::bytes::complete::{tag, tag_no_case};
 use nom::character::complete::{char, digit0, digit1, satisfy};
 use nom::combinator::{consumed, opt, recognize};
 use nom::error::ParseError;
-use nom::multi::{many0, separated_list0};
+use nom::multi::{many0, many1, separated_list0};
 use nom::sequence::tuple;
 use nom::{
-    AsChar, Compare, IResult, InputIter, InputLength, InputTake, Offset, Parser, Slice,
-    UnspecializedInput,
+    AsChar, Compare, IResult, InputIter, InputLength, InputTake, InputTakeAtPosition, Offset,
+    Parser, Slice,
 };
 use std::ops::{RangeFrom, RangeTo};
 
@@ -17,10 +17,10 @@ pub trait Input:
     + InputIter<Item: AsChar>
     + InputLength
     + InputTake
+    + InputTakeAtPosition<Item: AsChar>
     + Offset
     + Slice<RangeFrom<usize>>
     + Slice<RangeTo<usize>>
-    + UnspecializedInput
 {
 }
 impl<I> Input for I where
@@ -29,10 +29,10 @@ impl<I> Input for I where
         + InputIter<Item: AsChar>
         + InputLength
         + InputTake
+        + InputTakeAtPosition<Item: AsChar>
         + Offset
         + Slice<RangeFrom<usize>>
         + Slice<RangeTo<usize>>
-        + UnspecializedInput
 {
 }
 
@@ -95,13 +95,16 @@ where
     I: Input,
     E: ParseError<I>,
 {
-    consumed(tuple((many0(metric_descriptor), many0(sample))))
-        .map(|(consumed, (metric_descriptor, metric))| Metricfamily {
-            consumed,
-            metric_descriptor,
-            metric,
-        })
-        .parse(input)
+    consumed(alt((
+        tuple((many1(metric_descriptor), many0(sample))),
+        tuple((many0(metric_descriptor), many1(sample))),
+    )))
+    .map(|(consumed, (metric_descriptor, metric))| Metricfamily {
+        consumed,
+        metric_descriptor,
+        metric,
+    })
+    .parse(input)
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -355,21 +358,15 @@ where
     I: Input,
     E: ParseError<I>,
 {
+    let exp = || tuple((alt((char('e'), char('E'))), opt(sign), digit1));
     alt((
-        recognize(tuple((opt(sign), digit1))),
         recognize(tuple((
             opt(sign),
             digit1,
             opt(tuple((char('.'), digit0))),
-            opt(tuple((char('e'), opt(sign), digit1))),
+            opt(exp()),
         ))),
-        recognize(tuple((
-            opt(sign),
-            digit0,
-            char('.'),
-            digit1,
-            opt(tuple((char('e'), opt(sign), digit1))),
-        ))),
+        recognize(tuple((opt(sign), char('.'), digit1, opt(exp())))),
     ))
     .parse(input)
 }
@@ -462,3 +459,6 @@ where
     ));
     recognize(many0(escaped_char)).parse(input)
 }
+
+#[cfg(test)]
+mod tests;
