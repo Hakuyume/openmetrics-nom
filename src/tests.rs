@@ -25,7 +25,7 @@ fn test_metric_descriptor() {
         super::MetricDescriptor::Type {
             consumed: "# TYPE acme_http_router_request_seconds summary\n",
             metricname: "acme_http_router_request_seconds",
-            metric_type: super::MetricType::Summary,
+            metric_type: super::MetricType::Summary("summary"),
         },
     );
     check(

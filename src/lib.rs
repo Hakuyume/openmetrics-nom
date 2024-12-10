@@ -113,7 +113,7 @@ pub enum MetricDescriptor<I> {
     Type {
         consumed: I,
         metricname: I,
-        metric_type: MetricType,
+        metric_type: MetricType<I>,
     },
     Help {
         consumed: I,
@@ -188,30 +188,30 @@ where
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub enum MetricType {
-    Counter,
-    Gauge,
-    Histogram,
-    Gaugehistogram,
-    Stateset,
-    Info,
-    Summary,
-    Unknown,
+pub enum MetricType<I> {
+    Counter(I),
+    Gauge(I),
+    Histogram(I),
+    Gaugehistogram(I),
+    Stateset(I),
+    Info(I),
+    Summary(I),
+    Unknown(I),
 }
-pub fn metric_type<I, E>(input: I) -> IResult<I, MetricType, E>
+pub fn metric_type<I, E>(input: I) -> IResult<I, MetricType<I>, E>
 where
     I: Input,
     E: ParseError<I>,
 {
     alt((
-        tag(COUNTER).map(|_| MetricType::Counter),
-        tag(GAUGE).map(|_| MetricType::Gauge),
-        tag(HISTOGRAM).map(|_| MetricType::Histogram),
-        tag(GAUGEHISTOGRAM).map(|_| MetricType::Gaugehistogram),
-        tag(STATESET).map(|_| MetricType::Stateset),
-        tag(INFO).map(|_| MetricType::Info),
-        tag(SUMMARY).map(|_| MetricType::Summary),
-        tag(UNKNOWN).map(|_| MetricType::Unknown),
+        tag(COUNTER).map(MetricType::Counter),
+        tag(GAUGE).map(MetricType::Gauge),
+        tag(HISTOGRAM).map(MetricType::Histogram),
+        tag(GAUGEHISTOGRAM).map(MetricType::Gaugehistogram),
+        tag(STATESET).map(MetricType::Stateset),
+        tag(INFO).map(MetricType::Info),
+        tag(SUMMARY).map(MetricType::Summary),
+        tag(UNKNOWN).map(MetricType::Unknown),
     ))
     .parse(input)
 }
