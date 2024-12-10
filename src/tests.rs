@@ -13,6 +13,7 @@ where
 
 #[test]
 fn test_overall_structure() {
+    // https://github.com/prometheus/OpenMetrics/blob/main/specification/OpenMetrics.md#overall-structure
     let input = include_str!("overall_structure.txt");
     complete::<_, _, VerboseError<_>, _>(super::exposition)(input).unwrap();
 }
