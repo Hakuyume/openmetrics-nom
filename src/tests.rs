@@ -24,16 +24,14 @@ fn test_metric_descriptor() {
         super::metric_descriptor,
         "# TYPE acme_http_router_request_seconds summary\n",
         super::MetricDescriptor::Type {
-            consumed: "# TYPE acme_http_router_request_seconds summary\n",
             metricname: "acme_http_router_request_seconds",
-            metric_type: super::MetricType::Summary("summary"),
+            metric_type: super::Consumed("summary", super::MetricType::Summary),
         },
     );
     check(
         super::metric_descriptor,
         "# UNIT acme_http_router_request_seconds seconds\n",
         super::MetricDescriptor::Unit {
-            consumed: "# UNIT acme_http_router_request_seconds seconds\n",
             metricname: "acme_http_router_request_seconds",
             metricname_char: "seconds",
         },
@@ -42,7 +40,6 @@ fn test_metric_descriptor() {
         super::metric_descriptor,
         "# HELP acme_http_router_request_seconds Latency though all of ACME's HTTP request router.\n",
         super::MetricDescriptor::Help {
-            consumed: "# HELP acme_http_router_request_seconds Latency though all of ACME's HTTP request router.\n",
             metricname: "acme_http_router_request_seconds",
             escaped_string: "Latency though all of ACME's HTTP request router.",
         },
@@ -55,25 +52,29 @@ fn test_sample() {
         super::sample,
         "acme_http_router_request_seconds_sum{path=\"/api/v1\",method=\"GET\"} 9036.32\n",
         super::Sample {
-            consumed:
-                "acme_http_router_request_seconds_sum{path=\"/api/v1\",method=\"GET\"} 9036.32\n",
             metricname: "acme_http_router_request_seconds_sum",
-            labels: Some(super::Labels {
-                consumed: r#"{path="/api/v1",method="GET"}"#,
-                labels: vec![
-                    super::Label {
-                        consumed: r#"path="/api/v1""#,
-                        label_name: "path",
-                        escaped_string: "/api/v1",
-                    },
-                    super::Label {
-                        consumed: r#"method="GET""#,
-                        label_name: "method",
-                        escaped_string: "GET",
-                    },
-                ],
-            }),
-            number: super::Number::Real("9036.32"),
+            labels: Some(super::Consumed(
+                r#"{path="/api/v1",method="GET"}"#,
+                super::Labels {
+                    labels: vec![
+                        super::Consumed(
+                            r#"path="/api/v1""#,
+                            super::Label {
+                                label_name: "path",
+                                escaped_string: "/api/v1",
+                            },
+                        ),
+                        super::Consumed(
+                            r#"method="GET""#,
+                            super::Label {
+                                label_name: "method",
+                                escaped_string: "GET",
+                            },
+                        ),
+                    ],
+                },
+            )),
+            number: super::Consumed("9036.32", super::Number::Real("9036.32")),
             timestamp: None,
             exemplar: None,
         },

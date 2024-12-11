@@ -1,7 +1,7 @@
 use nom::branch::alt;
 use nom::bytes::complete::{tag, tag_no_case};
 use nom::character::complete::{char, digit0, digit1, satisfy};
-use nom::combinator::{consumed, opt, recognize};
+use nom::combinator::{opt, recognize};
 use nom::error::ParseError;
 use nom::multi::{many0, many1, separated_list0};
 use nom::sequence::tuple;
@@ -36,6 +36,17 @@ impl<I> Input for I where
 {
 }
 
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Consumed<I, O>(pub I, pub O);
+pub fn consumed<I, O, F, E>(parser: F) -> impl Parser<I, Consumed<I, O>, E>
+where
+    I: Clone + Offset + Slice<RangeTo<usize>>,
+    E: ParseError<I>,
+    F: Parser<I, O, E>,
+{
+    nom::combinator::consumed(parser).map(|(input, output)| Consumed(input, output))
+}
+
 // RFC 5234 B.1.
 pub const DQUOTE: char = '"';
 pub const SP: char = ' ';
@@ -45,63 +56,53 @@ pub const LF: char = '\n';
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Exposition<I> {
-    pub consumed: I,
-    pub metricset: Metricset<I>,
+    pub metricset: Consumed<I, Metricset<I>>,
 }
 pub fn exposition<I, E>(input: I) -> IResult<I, Exposition<I>, E>
 where
     I: Input,
     E: ParseError<I>,
 {
-    consumed(tuple((
-        metricset,
+    tuple((
+        consumed(metricset),
         char(HASH),
         char(SP),
         tag(EOF),
         opt(char(LF)),
-    )))
-    .map(|(consumed, (metricset, _, _, _, _))| Exposition {
-        consumed,
-        metricset,
-    })
+    ))
+    .map(|(metricset, _, _, _, _)| Exposition { metricset })
     .parse(input)
 }
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Metricset<I> {
-    pub consumed: I,
-    pub metricfamily: Vec<Metricfamily<I>>,
+    pub metricfamily: Vec<Consumed<I, Metricfamily<I>>>,
 }
 pub fn metricset<I, E>(input: I) -> IResult<I, Metricset<I>, E>
 where
     I: Input,
     E: ParseError<I>,
 {
-    consumed(many0(metricfamily))
-        .map(|(consumed, metricfamily)| Metricset {
-            consumed,
-            metricfamily,
-        })
+    many0(consumed(metricfamily))
+        .map(|metricfamily| Metricset { metricfamily })
         .parse(input)
 }
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Metricfamily<I> {
-    pub consumed: I,
-    pub metric_descriptor: Vec<MetricDescriptor<I>>,
-    pub metric: Vec<Sample<I>>,
+    pub metric_descriptor: Vec<Consumed<I, MetricDescriptor<I>>>,
+    pub metric: Vec<Consumed<I, Sample<I>>>,
 }
 pub fn metricfamily<I, E>(input: I) -> IResult<I, Metricfamily<I>, E>
 where
     I: Input,
     E: ParseError<I>,
 {
-    consumed(alt((
-        tuple((many1(metric_descriptor), many0(sample))),
-        tuple((many0(metric_descriptor), many1(sample))),
-    )))
-    .map(|(consumed, (metric_descriptor, metric))| Metricfamily {
-        consumed,
+    alt((
+        tuple((many1(consumed(metric_descriptor)), many0(consumed(sample)))),
+        tuple((many0(consumed(metric_descriptor)), many1(consumed(sample)))),
+    ))
+    .map(|(metric_descriptor, metric)| Metricfamily {
         metric_descriptor,
         metric,
     })
@@ -111,17 +112,14 @@ where
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum MetricDescriptor<I> {
     Type {
-        consumed: I,
         metricname: I,
-        metric_type: MetricType<I>,
+        metric_type: Consumed<I, MetricType>,
     },
     Help {
-        consumed: I,
         metricname: I,
         escaped_string: I,
     },
     Unit {
-        consumed: I,
         metricname: I,
         metricname_char: I,
     },
@@ -132,24 +130,23 @@ where
     E: ParseError<I>,
 {
     alt((
-        consumed(tuple((
+        tuple((
             char(HASH),
             char(SP),
             tag(TYPE),
             char(SP),
             metricname,
             char(SP),
-            metric_type,
+            consumed(metric_type),
             char(LF),
-        )))
-        .map(|(consumed, (_, _, _, _, metricname, _, metric_type, _))| {
-            MetricDescriptor::Type {
-                consumed,
+        ))
+        .map(
+            |(_, _, _, _, metricname, _, metric_type, _)| MetricDescriptor::Type {
                 metricname,
                 metric_type,
-            }
-        }),
-        consumed(tuple((
+            },
+        ),
+        tuple((
             char(HASH),
             char(SP),
             tag(HELP),
@@ -158,15 +155,14 @@ where
             char(SP),
             escaped_string,
             char(LF),
-        )))
+        ))
         .map(
-            |(consumed, (_, _, _, _, metricname, _, escaped_string, _))| MetricDescriptor::Help {
-                consumed,
+            |(_, _, _, _, metricname, _, escaped_string, _)| MetricDescriptor::Help {
                 metricname,
                 escaped_string,
             },
         ),
-        consumed(tuple((
+        tuple((
             char(HASH),
             char(SP),
             tag(UNIT),
@@ -175,10 +171,9 @@ where
             char(SP),
             recognize(many0(metricname_char)),
             char(LF),
-        )))
+        ))
         .map(
-            |(consumed, (_, _, _, _, metricname, _, metricname_char, _))| MetricDescriptor::Unit {
-                consumed,
+            |(_, _, _, _, metricname, _, metricname_char, _)| MetricDescriptor::Unit {
                 metricname,
                 metricname_char,
             },
@@ -188,60 +183,58 @@ where
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub enum MetricType<I> {
-    Counter(I),
-    Gauge(I),
-    Histogram(I),
-    Gaugehistogram(I),
-    Stateset(I),
-    Info(I),
-    Summary(I),
-    Unknown(I),
+pub enum MetricType {
+    Counter,
+    Gauge,
+    Histogram,
+    Gaugehistogram,
+    Stateset,
+    Info,
+    Summary,
+    Unknown,
 }
-pub fn metric_type<I, E>(input: I) -> IResult<I, MetricType<I>, E>
+pub fn metric_type<I, E>(input: I) -> IResult<I, MetricType, E>
 where
     I: Input,
     E: ParseError<I>,
 {
     alt((
-        tag(COUNTER).map(MetricType::Counter),
-        tag(GAUGE).map(MetricType::Gauge),
-        tag(HISTOGRAM).map(MetricType::Histogram),
-        tag(GAUGEHISTOGRAM).map(MetricType::Gaugehistogram),
-        tag(STATESET).map(MetricType::Stateset),
-        tag(INFO).map(MetricType::Info),
-        tag(SUMMARY).map(MetricType::Summary),
-        tag(UNKNOWN).map(MetricType::Unknown),
+        tag(COUNTER).map(|_| MetricType::Counter),
+        tag(GAUGE).map(|_| MetricType::Gauge),
+        tag(HISTOGRAM).map(|_| MetricType::Histogram),
+        tag(GAUGEHISTOGRAM).map(|_| MetricType::Gaugehistogram),
+        tag(STATESET).map(|_| MetricType::Stateset),
+        tag(INFO).map(|_| MetricType::Info),
+        tag(SUMMARY).map(|_| MetricType::Summary),
+        tag(UNKNOWN).map(|_| MetricType::Unknown),
     ))
     .parse(input)
 }
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Sample<I> {
-    pub consumed: I,
     pub metricname: I,
-    pub labels: Option<Labels<I>>,
-    pub number: Number<I>,
+    pub labels: Option<Consumed<I, Labels<I>>>,
+    pub number: Consumed<I, Number<I>>,
     pub timestamp: Option<I>,
-    pub exemplar: Option<Exemplar<I>>,
+    pub exemplar: Option<Consumed<I, Exemplar<I>>>,
 }
 pub fn sample<I, E>(input: I) -> IResult<I, Sample<I>, E>
 where
     I: Input,
     E: ParseError<I>,
 {
-    consumed(tuple((
+    tuple((
         metricname,
-        opt(labels),
+        opt(consumed(labels)),
         char(SP),
-        number,
+        consumed(number),
         opt(tuple((char(SP), timestamp))),
-        opt(exemplar),
+        opt(consumed(exemplar)),
         char(LF),
-    )))
+    ))
     .map(
-        |(consumed, (metricname, labels, _, number, timestamp, exemplar, _))| Sample {
-            consumed,
+        |(metricname, labels, _, number, timestamp, exemplar, _)| Sample {
             metricname,
             labels,
             number,
@@ -254,9 +247,8 @@ where
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Exemplar<I> {
-    pub consumed: I,
-    pub labels: Labels<I>,
-    pub number: Number<I>,
+    pub labels: Consumed<I, Labels<I>>,
+    pub number: Consumed<I, Number<I>>,
     pub timestamp: Option<I>,
 }
 pub fn exemplar<I, E>(input: I) -> IResult<I, Exemplar<I>, E>
@@ -264,48 +256,43 @@ where
     I: Input,
     E: ParseError<I>,
 {
-    consumed(tuple((
+    tuple((
         char(SP),
         char(HASH),
         char(SP),
-        labels,
+        consumed(labels),
         char(SP),
-        number,
+        consumed(number),
         opt(tuple((char(SP), timestamp))),
-    )))
-    .map(
-        |(consumed, (_, _, _, labels, _, number, timestamp))| Exemplar {
-            consumed,
-            labels,
-            number,
-            timestamp: timestamp.map(|(_, timestamp)| timestamp),
-        },
-    )
+    ))
+    .map(|(_, _, _, labels, _, number, timestamp)| Exemplar {
+        labels,
+        number,
+        timestamp: timestamp.map(|(_, timestamp)| timestamp),
+    })
     .parse(input)
 }
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Labels<I> {
-    pub consumed: I,
-    pub labels: Vec<Label<I>>,
+    pub labels: Vec<Consumed<I, Label<I>>>,
 }
 pub fn labels<I, E>(input: I) -> IResult<I, Labels<I>, E>
 where
     I: Input,
     E: ParseError<I>,
 {
-    consumed(tuple((
+    tuple((
         char('{'),
-        separated_list0(char(COMMA), label),
+        separated_list0(char(COMMA), consumed(label)),
         char('}'),
-    )))
-    .map(|(consumed, (_, labels, _))| Labels { consumed, labels })
+    ))
+    .map(|(_, labels, _)| Labels { labels })
     .parse(input)
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Label<I> {
-    pub consumed: I,
     pub label_name: I,
     pub escaped_string: I,
 }
@@ -314,15 +301,14 @@ where
     I: Input,
     E: ParseError<I>,
 {
-    consumed(tuple((
+    tuple((
         label_name,
         char(EQ),
         char(DQUOTE),
         escaped_string,
         char(DQUOTE),
-    )))
-    .map(|(consumed, (label_name, _, _, escaped_string, _))| Label {
-        consumed,
+    ))
+    .map(|(label_name, _, _, escaped_string, _)| Label {
         label_name,
         escaped_string,
     })
