@@ -332,7 +332,7 @@ where
     alt((
         realnumber,
         recognize(tuple((
-            opt(sign),
+            opt(satisfy(is_sign)),
             alt((tag_no_case("inf"), tag_no_case("infinity"))),
         ))),
         recognize(tag_no_case("nan")),
@@ -369,12 +369,8 @@ pub const EQ: char = '=';
 pub const COMMA: char = ',';
 pub const HASH: char = '#';
 
-pub fn sign<I, E>(input: I) -> IResult<I, char, E>
-where
-    I: Input,
-    E: ParseError<I>,
-{
-    alt((char('-'), char('+'))).parse(input)
+fn is_sign(c: char) -> bool {
+    c == '-' || c == '+'
 }
 
 pub fn metricname<I, E>(input: I) -> IResult<I, I, E>
