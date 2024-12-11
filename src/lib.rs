@@ -275,7 +275,7 @@ where
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Labels<I> {
-    pub labels: Vec<Consumed<I, Label<I>>>,
+    pub label: Vec<Consumed<I, Label<I>>>,
 }
 pub fn labels<I, E>(input: I) -> IResult<I, Labels<I>, E>
 where
@@ -287,7 +287,7 @@ where
         separated_list0(char(COMMA), consumed(label)),
         char('}'),
     ))
-    .map(|(_, labels, _)| Labels { labels })
+    .map(|(_, label, _)| Labels { label })
     .parse(input)
 }
 
