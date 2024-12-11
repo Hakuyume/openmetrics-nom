@@ -1,11 +1,12 @@
 use nom::branch::alt;
-use nom::bytes::complete::{tag, tag_no_case};
-use nom::character::complete::{char, digit0, digit1, satisfy};
+use nom::bytes::complete::{tag, tag_no_case, take_while};
+use nom::character::complete::{char, satisfy};
 use nom::combinator::{consumed, opt, recognize};
 use nom::error::ParseError;
-use nom::multi::{many0, many1, separated_list0};
+use nom::multi::{fold_many0, fold_many1, many0, many1, separated_list0};
+use nom::number::complete::recognize_float;
 use nom::sequence::tuple;
-use nom::{IResult, Parser};
+use nom::{AsChar, IResult, InputTakeAtPosition, Parser};
 use private::Input;
 
 mod private {
@@ -102,7 +103,7 @@ where
     .parse(input)
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum MetricDescriptor<I> {
     Type {
         metricname: I,
@@ -110,7 +111,7 @@ pub enum MetricDescriptor<I> {
     },
     Help {
         metricname: I,
-        escaped_string: I,
+        escaped_string: (I, HelpEscapedString<I>),
     },
     Unit {
         metricname: I,
@@ -146,7 +147,7 @@ where
             char(SP),
             metricname,
             char(SP),
-            escaped_string,
+            consumed(help_escaped_string),
             char(LF),
         ))
         .map(
@@ -162,7 +163,7 @@ where
             char(SP),
             metricname,
             char(SP),
-            recognize(many0(metricname_char)),
+            take_while(|c: <I as InputTakeAtPosition>::Item| is_metricname_char(c.as_char())),
             char(LF),
         ))
         .map(
@@ -207,9 +208,10 @@ where
 {
     alt((
         tag(COUNTER).map(|_| MetricType::Counter),
+        // try `gaugehistogram` before `gauge`
+        tag(GAUGEHISTOGRAM).map(|_| MetricType::Gaugehistogram),
         tag(GAUGE).map(|_| MetricType::Gauge),
         tag(HISTOGRAM).map(|_| MetricType::Histogram),
-        tag(GAUGEHISTOGRAM).map(|_| MetricType::Gaugehistogram),
         tag(STATESET).map(|_| MetricType::Stateset),
         tag(INFO).map(|_| MetricType::Info),
         tag(SUMMARY).map(|_| MetricType::Summary),
@@ -298,10 +300,10 @@ where
     .parse(input)
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Label<I> {
     pub label_name: I,
-    pub escaped_string: I,
+    pub escaped_string: (I, EscapedString<I>),
 }
 pub fn label<I, E>(input: I) -> IResult<I, Label<I>, E>
 where
@@ -312,7 +314,7 @@ where
         label_name,
         char(EQ),
         char(DQUOTE),
-        escaped_string,
+        consumed(escaped_string),
         char(DQUOTE),
     ))
     .map(|(label_name, _, _, escaped_string, _)| Label {
@@ -345,17 +347,7 @@ where
     I: Input,
     E: ParseError<I>,
 {
-    let exp = || tuple((alt((char('e'), char('E'))), opt(sign), digit1));
-    alt((
-        recognize(tuple((
-            opt(sign),
-            digit1,
-            opt(tuple((char('.'), digit0))),
-            opt(exp()),
-        ))),
-        recognize(tuple((opt(sign), char('.'), digit1, opt(exp())))),
-    ))
-    .parse(input)
+    recognize_float.parse(input)
 }
 
 pub const EOF: &str = "EOF";
@@ -390,23 +382,19 @@ where
     I: Input,
     E: ParseError<I>,
 {
-    recognize(tuple((metricname_initial_char, many0(metricname_char)))).parse(input)
+    recognize(tuple((
+        satisfy(is_metricname_initial_char),
+        fold_many0(satisfy(is_metricname_char), || (), |_, _| ()),
+    )))
+    .parse(input)
 }
 
-pub fn metricname_char<I, E>(input: I) -> IResult<I, char, E>
-where
-    I: Input,
-    E: ParseError<I>,
-{
-    alt((metricname_initial_char, satisfy(|c| c.is_ascii_digit()))).parse(input)
+fn is_metricname_char(c: char) -> bool {
+    is_metricname_initial_char(c) || c.is_ascii_digit()
 }
 
-pub fn metricname_initial_char<I, E>(input: I) -> IResult<I, char, E>
-where
-    I: Input,
-    E: ParseError<I>,
-{
-    alt((satisfy(|c| c.is_ascii_alphabetic()), char('_'), char(':'))).parse(input)
+fn is_metricname_initial_char(c: char) -> bool {
+    c.is_ascii_alphabetic() || c == '_' || c == ':'
 }
 
 pub fn label_name<I, E>(input: I) -> IResult<I, I, E>
@@ -414,37 +402,91 @@ where
     I: Input,
     E: ParseError<I>,
 {
-    recognize(tuple((label_name_initial_char, many0(label_name_char)))).parse(input)
+    recognize(tuple((
+        satisfy(is_label_name_initial_char),
+        fold_many0(satisfy(is_label_name_char), || (), |_, _| ()),
+    )))
+    .parse(input)
 }
 
-pub fn label_name_char<I, E>(input: I) -> IResult<I, char, E>
+fn is_label_name_char(c: char) -> bool {
+    is_label_name_initial_char(c) || c.is_ascii_digit()
+}
+
+fn is_label_name_initial_char(c: char) -> bool {
+    c.is_ascii_alphabetic()
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct EscapedString<I>(pub Vec<(I, EscapedStringFragment<I>)>);
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum EscapedStringFragment<I> {
+    Normal(I),
+    Lf,
+    Dquote,
+    Bs,
+}
+pub fn escaped_string<I, E>(input: I) -> IResult<I, EscapedString<I>, E>
 where
     I: Input,
     E: ParseError<I>,
 {
-    alt((label_name_initial_char, satisfy(|c| c.is_ascii_digit()))).parse(input)
+    many0(consumed(alt((
+        recognize(fold_many1(
+            alt((
+                satisfy(is_normal_char).map(|_| ()),
+                tuple((char(BS), satisfy(|c| is_normal_char(c) && c != 'n'))).map(|_| ()),
+            )),
+            || (),
+            |_, _| (),
+        ))
+        .map(EscapedStringFragment::Normal),
+        tuple((char(BS), char('n'))).map(|_| EscapedStringFragment::Lf),
+        tuple((char(BS), char(DQUOTE))).map(|_| EscapedStringFragment::Dquote),
+        tuple((char(BS), char(BS))).map(|_| EscapedStringFragment::Bs),
+    ))))
+    .map(EscapedString)
+    .parse(input)
 }
 
-pub fn label_name_initial_char<I, E>(input: I) -> IResult<I, char, E>
+fn is_normal_char(c: char) -> bool {
+    c != LF && c != DQUOTE && c != BS
+}
+
+// https://github.com/prometheus/client_python/blob/92b23970f032cbc990aa0e501708c425708e51ea/prometheus_client/parser.py#L32-L41
+#[derive(Clone, Debug, PartialEq)]
+pub struct HelpEscapedString<I>(pub Vec<(I, HelpEscapedStringFragment<I>)>);
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum HelpEscapedStringFragment<I> {
+    Normal(I),
+    Lf,
+    Dquote,
+    Bs,
+}
+pub fn help_escaped_string<I, E>(input: I) -> IResult<I, HelpEscapedString<I>, E>
 where
     I: Input,
     E: ParseError<I>,
 {
-    alt((satisfy(|c| c.is_ascii_alphabetic()), char('_'))).parse(input)
+    many0(consumed(alt((
+        recognize(fold_many1(
+            alt((
+                satisfy(is_help_normal_char).map(|_| ()),
+                tuple((char(BS), satisfy(|c| is_help_normal_char(c) && c != 'n'))).map(|_| ()),
+            )),
+            || (),
+            |_, _| (),
+        ))
+        .map(HelpEscapedStringFragment::Normal),
+        tuple((char(BS), char('n'))).map(|_| HelpEscapedStringFragment::Lf),
+        tuple((char(BS), char(BS))).map(|_| HelpEscapedStringFragment::Bs),
+    ))))
+    .map(HelpEscapedString)
+    .parse(input)
 }
 
-pub fn escaped_string<I, E>(input: I) -> IResult<I, I, E>
-where
-    I: Input,
-    E: ParseError<I>,
-{
-    let normal_char = || satisfy(|c| c != LF && c != DQUOTE && c != BS);
-    let escaped_char = alt((
-        recognize(normal_char()),
-        recognize(tuple((char(BS), alt((char('n'), char(DQUOTE), char(BS)))))),
-        recognize(tuple((char(BS), normal_char()))),
-    ));
-    recognize(many0(escaped_char)).parse(input)
+fn is_help_normal_char(c: char) -> bool {
+    c != LF && c != BS
 }
 
 #[cfg(test)]
