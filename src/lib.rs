@@ -80,7 +80,7 @@ where
 #[derive(Clone, Debug, PartialEq)]
 pub struct Metricfamily<I> {
     pub metric_descriptor: Vec<(I, MetricDescriptor<I>)>,
-    pub metric: Vec<(I, Sample<I>)>,
+    pub metric: Vec<(I, Metric<I>)>,
 }
 pub fn metricfamily<I, E>(input: I) -> IResult<I, Metricfamily<I>, E>
 where
@@ -88,8 +88,8 @@ where
     E: ParseError<I>,
 {
     alt((
-        tuple((many1(consumed(metric_descriptor)), many0(consumed(sample)))),
-        tuple((many0(consumed(metric_descriptor)), many1(consumed(sample)))),
+        tuple((many1(consumed(metric_descriptor)), many0(consumed(metric)))),
+        tuple((many0(consumed(metric_descriptor)), many1(consumed(metric)))),
     ))
     .map(|(metric_descriptor, metric)| Metricfamily {
         metric_descriptor,
@@ -169,6 +169,20 @@ where
         ),
     ))
     .parse(input)
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct Metric<I> {
+    pub sample: Vec<(I, Sample<I>)>,
+}
+pub fn metric<I, E>(input: I) -> IResult<I, Metric<I>, E>
+where
+    I: Input,
+    E: ParseError<I>,
+{
+    many1(consumed(sample))
+        .map(|sample| Metric { sample })
+        .parse(input)
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
