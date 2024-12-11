@@ -1,0 +1,3 @@
+[submodule "OpenMetrics"]
+	path = OpenMetrics
+	url = https://github.com/prometheus/OpenMetrics.git

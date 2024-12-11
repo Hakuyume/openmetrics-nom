@@ -5,26 +5,17 @@ use nom::combinator::{consumed, opt, recognize};
 use nom::error::ParseError;
 use nom::multi::{many0, many1, separated_list0};
 use nom::sequence::tuple;
-use nom::{
-    AsChar, Compare, IResult, InputIter, InputLength, InputTake, InputTakeAtPosition, Offset,
-    Parser, Slice,
-};
-use std::ops::{RangeFrom, RangeTo};
+use nom::{IResult, Parser};
+use private::Input;
 
-pub trait Input:
-    Clone
-    + Compare<&'static str>
-    + InputIter<Item: AsChar>
-    + InputLength
-    + InputTake
-    + InputTakeAtPosition<Item: AsChar>
-    + Offset
-    + Slice<RangeFrom<usize>>
-    + Slice<RangeTo<usize>>
-{
-}
-impl<I> Input for I where
-    I: Clone
+mod private {
+    use nom::{
+        AsChar, Compare, InputIter, InputLength, InputTake, InputTakeAtPosition, Offset, Slice,
+    };
+    use std::ops::{RangeFrom, RangeTo};
+
+    pub trait Input:
+        Clone
         + Compare<&'static str>
         + InputIter<Item: AsChar>
         + InputLength
@@ -33,7 +24,20 @@ impl<I> Input for I where
         + Offset
         + Slice<RangeFrom<usize>>
         + Slice<RangeTo<usize>>
-{
+    {
+    }
+    impl<I> Input for I where
+        I: Clone
+            + Compare<&'static str>
+            + InputIter<Item: AsChar>
+            + InputLength
+            + InputTake
+            + InputTakeAtPosition<Item: AsChar>
+            + Offset
+            + Slice<RangeFrom<usize>>
+            + Slice<RangeTo<usize>>
+    {
+    }
 }
 
 // RFC 5234 B.1.

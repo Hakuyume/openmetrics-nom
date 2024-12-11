@@ -2,20 +2,15 @@ use nom::combinator::complete;
 use nom::error::VerboseError;
 use nom::Parser;
 use std::fmt::Debug;
+use std::fs::{self, File};
+use std::path::PathBuf;
 
-fn check<'a, F, O>(mut f: F, input: &'a str, expected: O)
+fn check<'a, O, F>(mut f: F, input: &'a str, expected: O)
 where
-    F: Parser<&'a str, O, VerboseError<&'a str>>,
     O: Debug + PartialEq,
+    F: Parser<&'a str, O, VerboseError<&'a str>>,
 {
     assert_eq!(f.parse(input), Ok(("", expected)));
-}
-
-#[test]
-fn test_overall_structure() {
-    // https://github.com/prometheus/OpenMetrics/blob/main/specification/OpenMetrics.md#overall-structure
-    let input = include_str!("overall_structure.txt");
-    complete::<_, _, VerboseError<_>, _>(super::exposition)(input).unwrap();
 }
 
 #[test]
@@ -100,4 +95,48 @@ fn test_escaped_string() {
     check(super::escaped_string, "9036.32", "9036.32");
     check(super::escaped_string, "69", "69");
     check(super::escaped_string, "4.20072246e+06", "4.20072246e+06");
+}
+
+#[test]
+fn test_overall_structure() {
+    // https://github.com/prometheus/OpenMetrics/blob/main/specification/OpenMetrics.md#overall-structure
+    let input = include_str!("overall_structure.txt");
+    complete::<_, _, VerboseError<_>, _>(super::exposition)(input).unwrap();
+}
+
+fn openmetrics_testdata() -> Vec<(PathBuf, bool, Vec<u8>)> {
+    #[derive(serde::Deserialize)]
+    struct Test {
+        #[serde(rename = "type")]
+        type_: String,
+        file: PathBuf,
+        #[serde(rename = "shouldParse")]
+        should_parse: bool,
+    }
+
+    fs::read_dir("./OpenMetrics/tests/testdata/parsers")
+        .unwrap()
+        .into_iter()
+        .map(|entry| {
+            let entry = entry.unwrap();
+            assert!(entry.metadata().unwrap().is_dir());
+            let test = serde_json::from_reader::<_, Test>(
+                File::open(entry.path().join("test.json")).unwrap(),
+            )
+            .unwrap();
+            assert_eq!(test.type_, "text");
+            let input = fs::read(entry.path().join(&test.file)).unwrap();
+            (entry.path(), test.should_parse, input)
+        })
+        .collect()
+}
+
+#[test]
+fn test_openmetrics_testdata_ok() {
+    for (path, should_parse, input) in openmetrics_testdata() {
+        dbg!(path, should_parse);
+        if should_parse {
+            complete::<_, _, VerboseError<_>, _>(super::exposition)(&input[..]).unwrap();
+        }
+    }
 }
