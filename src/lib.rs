@@ -1,7 +1,7 @@
 use nom::branch::alt;
 use nom::bytes::complete::{tag, tag_no_case};
 use nom::character::complete::{char, digit0, digit1, satisfy};
-use nom::combinator::{opt, recognize};
+use nom::combinator::{opt, recognize, consumed};
 use nom::error::ParseError;
 use nom::multi::{many0, many1, separated_list0};
 use nom::sequence::tuple;
@@ -36,17 +36,6 @@ impl<I> Input for I where
 {
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct Consumed<I, O>(pub I, pub O);
-pub fn consumed<I, O, F, E>(parser: F) -> impl Parser<I, Consumed<I, O>, E>
-where
-    I: Clone + Offset + Slice<RangeTo<usize>>,
-    E: ParseError<I>,
-    F: Parser<I, O, E>,
-{
-    nom::combinator::consumed(parser).map(|(input, output)| Consumed(input, output))
-}
-
 // RFC 5234 B.1.
 pub const DQUOTE: char = '"';
 pub const SP: char = ' ';
@@ -56,7 +45,7 @@ pub const LF: char = '\n';
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Exposition<I> {
-    pub metricset: Consumed<I, Metricset<I>>,
+    pub metricset: (I, Metricset<I>),
 }
 pub fn exposition<I, E>(input: I) -> IResult<I, Exposition<I>, E>
 where
@@ -76,7 +65,7 @@ where
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Metricset<I> {
-    pub metricfamily: Vec<Consumed<I, Metricfamily<I>>>,
+    pub metricfamily: Vec<(I, Metricfamily<I>)>,
 }
 pub fn metricset<I, E>(input: I) -> IResult<I, Metricset<I>, E>
 where
@@ -90,8 +79,8 @@ where
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Metricfamily<I> {
-    pub metric_descriptor: Vec<Consumed<I, MetricDescriptor<I>>>,
-    pub metric: Vec<Consumed<I, Sample<I>>>,
+    pub metric_descriptor: Vec<(I, MetricDescriptor<I>)>,
+    pub metric: Vec<(I, Sample<I>)>,
 }
 pub fn metricfamily<I, E>(input: I) -> IResult<I, Metricfamily<I>, E>
 where
@@ -113,7 +102,7 @@ where
 pub enum MetricDescriptor<I> {
     Type {
         metricname: I,
-        metric_type: Consumed<I, MetricType>,
+        metric_type: (I, MetricType),
     },
     Help {
         metricname: I,
@@ -214,10 +203,10 @@ where
 #[derive(Clone, Debug, PartialEq)]
 pub struct Sample<I> {
     pub metricname: I,
-    pub labels: Option<Consumed<I, Labels<I>>>,
-    pub number: Consumed<I, Number<I>>,
+    pub labels: Option<(I, Labels<I>)>,
+    pub number: (I, Number<I>),
     pub timestamp: Option<I>,
-    pub exemplar: Option<Consumed<I, Exemplar<I>>>,
+    pub exemplar: Option<(I, Exemplar<I>)>,
 }
 pub fn sample<I, E>(input: I) -> IResult<I, Sample<I>, E>
 where
@@ -247,8 +236,8 @@ where
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Exemplar<I> {
-    pub labels: Consumed<I, Labels<I>>,
-    pub number: Consumed<I, Number<I>>,
+    pub labels: (I, Labels<I>),
+    pub number: (I, Number<I>),
     pub timestamp: Option<I>,
 }
 pub fn exemplar<I, E>(input: I) -> IResult<I, Exemplar<I>, E>
@@ -275,7 +264,7 @@ where
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Labels<I> {
-    pub label: Vec<Consumed<I, Label<I>>>,
+    pub label: Vec<(I, Label<I>)>,
 }
 pub fn labels<I, E>(input: I) -> IResult<I, Labels<I>, E>
 where
