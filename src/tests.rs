@@ -25,7 +25,7 @@ fn test_metric_descriptor() {
         "# TYPE acme_http_router_request_seconds summary\n",
         super::MetricDescriptor::Type {
             metricname: "acme_http_router_request_seconds",
-            metric_type: super::Consumed("summary", super::MetricType::Summary),
+            metric_type: ("summary", super::MetricType::Summary),
         },
     );
     check(
@@ -53,18 +53,18 @@ fn test_sample() {
         "acme_http_router_request_seconds_sum{path=\"/api/v1\",method=\"GET\"} 9036.32\n",
         super::Sample {
             metricname: "acme_http_router_request_seconds_sum",
-            labels: Some(super::Consumed(
+            labels: Some((
                 r#"{path="/api/v1",method="GET"}"#,
                 super::Labels {
-                    labels: vec![
-                        super::Consumed(
+                    label: vec![
+                        (
                             r#"path="/api/v1""#,
                             super::Label {
                                 label_name: "path",
                                 escaped_string: "/api/v1",
                             },
                         ),
-                        super::Consumed(
+                        (
                             r#"method="GET""#,
                             super::Label {
                                 label_name: "method",
@@ -74,7 +74,7 @@ fn test_sample() {
                     ],
                 },
             )),
-            number: super::Consumed("9036.32", super::Number::Real("9036.32")),
+            number: "9036.32",
             timestamp: None,
             exemplar: None,
         },

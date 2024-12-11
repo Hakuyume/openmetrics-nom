@@ -1,7 +1,7 @@
 use nom::branch::alt;
 use nom::bytes::complete::{tag, tag_no_case};
 use nom::character::complete::{char, digit0, digit1, satisfy};
-use nom::combinator::{opt, recognize, consumed};
+use nom::combinator::{consumed, opt, recognize};
 use nom::error::ParseError;
 use nom::multi::{many0, many1, separated_list0};
 use nom::sequence::tuple;
@@ -204,7 +204,7 @@ where
 pub struct Sample<I> {
     pub metricname: I,
     pub labels: Option<(I, Labels<I>)>,
-    pub number: (I, Number<I>),
+    pub number: I,
     pub timestamp: Option<I>,
     pub exemplar: Option<(I, Exemplar<I>)>,
 }
@@ -217,7 +217,7 @@ where
         metricname,
         opt(consumed(labels)),
         char(SP),
-        consumed(number),
+        number,
         opt(tuple((char(SP), timestamp))),
         opt(consumed(exemplar)),
         char(LF),
@@ -237,7 +237,7 @@ where
 #[derive(Clone, Debug, PartialEq)]
 pub struct Exemplar<I> {
     pub labels: (I, Labels<I>),
-    pub number: (I, Number<I>),
+    pub number: I,
     pub timestamp: Option<I>,
 }
 pub fn exemplar<I, E>(input: I) -> IResult<I, Exemplar<I>, E>
@@ -251,7 +251,7 @@ where
         char(SP),
         consumed(labels),
         char(SP),
-        consumed(number),
+        number,
         opt(tuple((char(SP), timestamp))),
     ))
     .map(|(_, _, _, labels, _, number, timestamp)| Exemplar {
@@ -304,25 +304,18 @@ where
     .parse(input)
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub enum Number<I> {
-    Real(I),
-    Inf(I),
-    Nan(I),
-}
-pub fn number<I, E>(input: I) -> IResult<I, Number<I>, E>
+pub fn number<I, E>(input: I) -> IResult<I, I, E>
 where
     I: Input,
     E: ParseError<I>,
 {
     alt((
-        realnumber.map(Number::Real),
+        realnumber,
         recognize(tuple((
             opt(sign),
             alt((tag_no_case("inf"), tag_no_case("infinity"))),
-        )))
-        .map(Number::Inf),
-        tag_no_case("nan").map(Number::Nan),
+        ))),
+        recognize(tag_no_case("nan")),
     ))
     .parse(input)
 }
