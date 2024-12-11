@@ -24,7 +24,6 @@ fn openmetrics_testdata() -> Vec<(PathBuf, bool, String)> {
 
     fs::read_dir("./OpenMetrics/tests/testdata/parsers")
         .unwrap()
-        .into_iter()
         .map(|entry| {
             let entry = entry.unwrap();
             assert!(entry.metadata().unwrap().is_dir());
