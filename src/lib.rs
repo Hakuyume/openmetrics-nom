@@ -1,15 +1,12 @@
-pub mod traits;
-
 use nom::branch::alt;
 use nom::bytes::complete::{tag, tag_no_case, take_while};
 use nom::character::complete::{char, satisfy};
 use nom::combinator::{consumed, opt, recognize};
 use nom::error::context;
+use nom::error::{ContextError, ParseError};
 use nom::multi::{fold_many0, fold_many1, many0, many1, separated_list0};
 use nom::number::complete::recognize_float;
-use nom::sequence::tuple;
-use nom::{AsChar, IResult, InputTakeAtPosition, Parser};
-use traits::{Error, Input};
+use nom::{AsChar, Compare, IResult, Input, Offset, Parser};
 
 // RFC 5234 B.1.
 const DQUOTE: char = '"';
@@ -24,18 +21,19 @@ pub struct Exposition<I> {
 }
 pub fn exposition<I, E>(input: I) -> IResult<I, Exposition<I>, E>
 where
-    I: Input,
-    E: Error<I>,
+    I: Compare<&'static str> + Input + Offset,
+    I::Item: AsChar,
+    E: ContextError<I> + ParseError<I>,
 {
     context(
         "exposition",
-        tuple((
+        (
             consumed(metricset),
             char(HASH),
             char(SP),
             tag(EOF),
             opt(char(LF)),
-        )),
+        ),
     )
     .map(|(metricset, _, _, _, _)| Exposition { metricset })
     .parse(input)
@@ -47,8 +45,9 @@ pub struct Metricset<I> {
 }
 pub fn metricset<I, E>(input: I) -> IResult<I, Metricset<I>, E>
 where
-    I: Input,
-    E: Error<I>,
+    I: Compare<&'static str> + Input + Offset,
+    I::Item: AsChar,
+    E: ContextError<I> + ParseError<I>,
 {
     context("metricset", many0(consumed(metricfamily)))
         .map(|metricfamily| Metricset { metricfamily })
@@ -62,14 +61,15 @@ pub struct Metricfamily<I> {
 }
 pub fn metricfamily<I, E>(input: I) -> IResult<I, Metricfamily<I>, E>
 where
-    I: Input,
-    E: Error<I>,
+    I: Compare<&'static str> + Input + Offset,
+    I::Item: AsChar,
+    E: ContextError<I> + ParseError<I>,
 {
     context(
         "metricfamily",
         alt((
-            tuple((many1(consumed(metric_descriptor)), many0(consumed(metric)))),
-            tuple((many0(consumed(metric_descriptor)), many1(consumed(metric)))),
+            (many1(consumed(metric_descriptor)), many0(consumed(metric))),
+            (many0(consumed(metric_descriptor)), many1(consumed(metric))),
         )),
     )
     .map(|(metric_descriptor, metric)| Metricfamily {
@@ -87,7 +87,7 @@ pub enum MetricDescriptor<I> {
     },
     Help {
         metricname: I,
-        help_escaped_string: (I, HelpEscapedString<I>),
+        escaped_string: (I, EscapedString<I>),
     },
     Unit {
         metricname: I,
@@ -96,13 +96,14 @@ pub enum MetricDescriptor<I> {
 }
 pub fn metric_descriptor<I, E>(input: I) -> IResult<I, MetricDescriptor<I>, E>
 where
-    I: Input,
-    E: Error<I>,
+    I: Compare<&'static str> + Input + Offset,
+    I::Item: AsChar,
+    E: ContextError<I> + ParseError<I>,
 {
     context(
         "metric_descriptor",
         alt((
-            tuple((
+            (
                 char(HASH),
                 char(SP),
                 tag(TYPE),
@@ -111,45 +112,45 @@ where
                 char(SP),
                 consumed(metric_type),
                 char(LF),
-            ))
-            .map(|(_, _, _, _, metricname, _, metric_type, _)| {
-                MetricDescriptor::Type {
-                    metricname,
-                    metric_type,
-                }
-            }),
-            tuple((
+            )
+                .map(|(_, _, _, _, metricname, _, metric_type, _)| {
+                    MetricDescriptor::Type {
+                        metricname,
+                        metric_type,
+                    }
+                }),
+            (
                 char(HASH),
                 char(SP),
                 tag(HELP),
                 char(SP),
                 metricname,
                 char(SP),
-                consumed(help_escaped_string),
+                consumed(escaped_string),
                 char(LF),
-            ))
-            .map(|(_, _, _, _, metricname, _, help_escaped_string, _)| {
-                MetricDescriptor::Help {
-                    metricname,
-                    help_escaped_string,
-                }
-            }),
-            tuple((
+            )
+                .map(|(_, _, _, _, metricname, _, escaped_string, _)| {
+                    MetricDescriptor::Help {
+                        metricname,
+                        escaped_string,
+                    }
+                }),
+            (
                 char(HASH),
                 char(SP),
                 tag(UNIT),
                 char(SP),
                 metricname,
                 char(SP),
-                take_while(|c: <I as InputTakeAtPosition>::Item| is_metricname_char(c.as_char())),
+                take_while(|c: I::Item| is_metricname_char(c.as_char())),
                 char(LF),
-            ))
-            .map(|(_, _, _, _, metricname, _, metricname_char, _)| {
-                MetricDescriptor::Unit {
-                    metricname,
-                    metricname_char,
-                }
-            }),
+            )
+                .map(|(_, _, _, _, metricname, _, metricname_char, _)| {
+                    MetricDescriptor::Unit {
+                        metricname,
+                        metricname_char,
+                    }
+                }),
         )),
     )
     .parse(input)
@@ -157,15 +158,16 @@ where
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Metric<I> {
-    pub sample: [(I, Sample<I>); 1],
+    pub sample: Vec<(I, Sample<I>)>,
 }
 pub fn metric<I, E>(input: I) -> IResult<I, Metric<I>, E>
 where
-    I: Input,
-    E: Error<I>,
+    I: Compare<&'static str> + Input + Offset,
+    I::Item: AsChar,
+    E: ContextError<I> + ParseError<I>,
 {
-    context("metric", consumed(sample))
-        .map(|sample| Metric { sample: [sample] })
+    context("metric", many1(consumed(sample)))
+        .map(|sample| Metric { sample })
         .parse(input)
 }
 
@@ -182,8 +184,9 @@ pub enum MetricType {
 }
 pub fn metric_type<I, E>(input: I) -> IResult<I, MetricType, E>
 where
-    I: Input,
-    E: Error<I>,
+    I: Compare<&'static str> + Input + Offset,
+    I::Item: AsChar,
+    E: ContextError<I> + ParseError<I>,
 {
     context(
         "metric_type",
@@ -212,20 +215,21 @@ pub struct Sample<I> {
 }
 pub fn sample<I, E>(input: I) -> IResult<I, Sample<I>, E>
 where
-    I: Input,
-    E: Error<I>,
+    I: Compare<&'static str> + Input + Offset,
+    I::Item: AsChar,
+    E: ContextError<I> + ParseError<I>,
 {
     context(
         "sample",
-        tuple((
+        (
             metricname,
             opt(consumed(labels)),
             char(SP),
             number,
-            opt(tuple((char(SP), timestamp))),
+            opt((char(SP), timestamp)),
             opt(consumed(exemplar)),
             char(LF),
-        )),
+        ),
     )
     .map(
         |(metricname, labels, _, number, timestamp, exemplar, _)| Sample {
@@ -247,20 +251,21 @@ pub struct Exemplar<I> {
 }
 pub fn exemplar<I, E>(input: I) -> IResult<I, Exemplar<I>, E>
 where
-    I: Input,
-    E: Error<I>,
+    I: Compare<&'static str> + Input + Offset,
+    I::Item: AsChar,
+    E: ContextError<I> + ParseError<I>,
 {
     context(
         "exemplar",
-        tuple((
+        (
             char(SP),
             char(HASH),
             char(SP),
             consumed(labels),
             char(SP),
             number,
-            opt(tuple((char(SP), timestamp))),
-        )),
+            opt((char(SP), timestamp)),
+        ),
     )
     .map(|(_, _, _, labels, _, number, timestamp)| Exemplar {
         labels,
@@ -276,16 +281,17 @@ pub struct Labels<I> {
 }
 pub fn labels<I, E>(input: I) -> IResult<I, Labels<I>, E>
 where
-    I: Input,
-    E: Error<I>,
+    I: Input + Offset,
+    I::Item: AsChar,
+    E: ContextError<I> + ParseError<I>,
 {
     context(
         "labels",
-        tuple((
+        (
             char('{'),
             separated_list0(char(COMMA), consumed(label)),
             char('}'),
-        )),
+        ),
     )
     .map(|(_, label, _)| Labels { label })
     .parse(input)
@@ -298,18 +304,19 @@ pub struct Label<I> {
 }
 pub fn label<I, E>(input: I) -> IResult<I, Label<I>, E>
 where
-    I: Input,
-    E: Error<I>,
+    I: Input + Offset,
+    I::Item: AsChar,
+    E: ContextError<I> + ParseError<I>,
 {
     context(
         "label",
-        tuple((
+        (
             label_name,
             char(EQ),
             char(DQUOTE),
             consumed(escaped_string),
             char(DQUOTE),
-        )),
+        ),
     )
     .map(|(label_name, _, _, escaped_string, _)| Label {
         label_name,
@@ -320,17 +327,18 @@ where
 
 pub fn number<I, E>(input: I) -> IResult<I, I, E>
 where
-    I: Input,
-    E: Error<I>,
+    I: Compare<&'static str> + Input + Offset,
+    I::Item: AsChar,
+    E: ContextError<I> + ParseError<I>,
 {
     context(
         "number",
         alt((
             realnumber,
-            recognize(tuple((
+            recognize((
                 opt(satisfy(is_sign)),
                 alt((tag_no_case("inf"), tag_no_case("infinity"))),
-            ))),
+            )),
             recognize(tag_no_case("nan")),
         )),
     )
@@ -341,8 +349,9 @@ pub use self::realnumber as timestamp;
 
 pub fn realnumber<I, E>(input: I) -> IResult<I, I, E>
 where
-    I: Input,
-    E: Error<I>,
+    I: Input + Offset,
+    I::Item: AsChar,
+    E: ContextError<I> + ParseError<I>,
 {
     context("realnumber", recognize_float).parse(input)
 }
@@ -372,15 +381,16 @@ fn is_sign(c: char) -> bool {
 
 pub fn metricname<I, E>(input: I) -> IResult<I, I, E>
 where
-    I: Input,
-    E: Error<I>,
+    I: Input + Offset,
+    I::Item: AsChar,
+    E: ContextError<I> + ParseError<I>,
 {
     context(
         "metricname",
-        recognize(tuple((
+        recognize((
             satisfy(is_metricname_initial_char),
             fold_many0(satisfy(is_metricname_char), || (), |_, _| ()),
-        ))),
+        )),
     )
     .parse(input)
 }
@@ -395,15 +405,16 @@ fn is_metricname_initial_char(c: char) -> bool {
 
 pub fn label_name<I, E>(input: I) -> IResult<I, I, E>
 where
-    I: Input,
-    E: Error<I>,
+    I: Input + Offset,
+    I::Item: AsChar,
+    E: ContextError<I> + ParseError<I>,
 {
     context(
         "label_name",
-        recognize(tuple((
+        recognize((
             satisfy(is_label_name_initial_char),
             fold_many0(satisfy(is_label_name_char), || (), |_, _| ()),
-        ))),
+        )),
     )
     .parse(input)
 }
@@ -427,8 +438,9 @@ pub enum EscapedStringFragment<I> {
 }
 pub fn escaped_string<I, E>(input: I) -> IResult<I, EscapedString<I>, E>
 where
-    I: Input,
-    E: Error<I>,
+    I: Input + Offset,
+    I::Item: AsChar,
+    E: ContextError<I> + ParseError<I>,
 {
     context(
         "escaped_string",
@@ -436,15 +448,15 @@ where
             recognize(fold_many1(
                 alt((
                     satisfy(is_normal_char).map(|_| ()),
-                    tuple((char(BS), satisfy(|c| is_normal_char(c) && c != 'n'))).map(|_| ()),
+                    (char(BS), satisfy(|c| is_normal_char(c) && c != 'n')).map(|_| ()),
                 )),
                 || (),
                 |_, _| (),
             ))
             .map(EscapedStringFragment::Normal),
-            tuple((char(BS), char('n'))).map(|_| EscapedStringFragment::Lf),
-            tuple((char(BS), char(DQUOTE))).map(|_| EscapedStringFragment::Dquote),
-            tuple((char(BS), char(BS))).map(|_| EscapedStringFragment::Bs),
+            (char(BS), char('n')).map(|_| EscapedStringFragment::Lf),
+            (char(BS), char(DQUOTE)).map(|_| EscapedStringFragment::Dquote),
+            (char(BS), char(BS)).map(|_| EscapedStringFragment::Bs),
         )))),
     )
     .map(EscapedString)
@@ -453,45 +465,6 @@ where
 
 fn is_normal_char(c: char) -> bool {
     c != LF && c != DQUOTE && c != BS
-}
-
-// https://github.com/prometheus/OpenMetrics/issues/288
-#[derive(Clone, Debug, PartialEq)]
-pub struct HelpEscapedString<I>(pub Vec<(I, HelpEscapedStringFragment<I>)>);
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub enum HelpEscapedStringFragment<I> {
-    Normal(I),
-    Lf,
-    Dquote,
-    Bs,
-}
-pub fn help_escaped_string<I, E>(input: I) -> IResult<I, HelpEscapedString<I>, E>
-where
-    I: Input,
-    E: Error<I>,
-{
-    context(
-        "help_escaped_string",
-        many0(consumed(alt((
-            recognize(fold_many1(
-                alt((
-                    satisfy(is_help_normal_char).map(|_| ()),
-                    tuple((char(BS), satisfy(|c| is_help_normal_char(c) && c != 'n'))).map(|_| ()),
-                )),
-                || (),
-                |_, _| (),
-            ))
-            .map(HelpEscapedStringFragment::Normal),
-            tuple((char(BS), char('n'))).map(|_| HelpEscapedStringFragment::Lf),
-            tuple((char(BS), char(BS))).map(|_| HelpEscapedStringFragment::Bs),
-        )))),
-    )
-    .map(HelpEscapedString)
-    .parse(input)
-}
-
-fn is_help_normal_char(c: char) -> bool {
-    c != LF && c != BS
 }
 
 #[cfg(test)]

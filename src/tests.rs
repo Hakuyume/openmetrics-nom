@@ -1,75 +1,16 @@
-mod openmetrics_testdata;
-
-use nom::combinator::complete;
-use nom::error::VerboseError;
+use nom::error::Error;
 use nom::{Finish, Parser};
 use std::fmt::Debug;
-
-#[test]
-fn test_overall_structure() {
-    // https://github.com/prometheus/OpenMetrics/blob/main/specification/OpenMetrics.md#overall-structure
-    let input = include_str!("tests/overall_structure.txt");
-    complete(crate::exposition)
-        .parse(input)
-        .finish()
-        .map_err(|e| nom::error::convert_error(input, e))
-        .unwrap();
-}
+use std::fs::{self, File};
+use std::path::PathBuf;
 
 #[track_caller]
-fn check<'a, O, F>(f: F, input: &'a str, expected: O)
+fn check<'a, F>(mut f: F, input: &'a str, expected: F::Output)
 where
-    O: Debug + PartialEq,
-    F: Parser<&'a str, O, VerboseError<&'a str>>,
+    F: Parser<&'a str, Error = Error<&'a str>>,
+    F::Output: Debug + PartialEq,
 {
-    assert_eq!(
-        complete(f)
-            .parse(input)
-            .finish()
-            .map_err(|e| nom::error::convert_error(input, e)),
-        Ok(("", expected))
-    );
-}
-
-seq_macro::seq!(I in 0..3 {
-    #[rstest::rstest]
-    #(#[case(I)])*
-    fn test_metric_descriptor(#[case] i: usize) {
-        test_metric_descriptor_impl(i);
-    }
-});
-fn test_metric_descriptor_impl(i: usize) {
-    let cases = [
-        (
-            "# TYPE foo counter\n",
-            crate::MetricDescriptor::Type {
-                metricname: "foo",
-                metric_type: ("counter", crate::MetricType::Counter),
-            },
-        ),
-        (
-            "# UNIT bar seconds\n",
-            crate::MetricDescriptor::Unit {
-                metricname: "bar",
-                metricname_char: "seconds",
-            },
-        ),
-        (
-            "# HELP baz baz is qux.\n",
-            crate::MetricDescriptor::Help {
-                metricname: "baz",
-                help_escaped_string: (
-                    "baz is qux.",
-                    crate::HelpEscapedString(vec![(
-                        "baz is qux.",
-                        crate::HelpEscapedStringFragment::Normal("baz is qux."),
-                    )]),
-                ),
-            },
-        ),
-    ];
-    let (input, expected) = cases.into_iter().nth(i).unwrap();
-    check(crate::metric_descriptor, input, expected);
+    assert_eq!(f.parse(input).finish(), Ok(("", expected)));
 }
 
 #[rstest::rstest]
@@ -85,8 +26,8 @@ fn test_metric_type(#[case] input: &str, #[case] expected: crate::MetricType) {
     check(crate::metric_type, input, expected);
 }
 
-#[rstest::rstest]
 // https://github.com/prometheus/OpenMetrics/blob/main/specification/OpenMetrics.md#numbers
+#[rstest::rstest]
 #[case("23")]
 #[case("0042")]
 #[case("1341298465647914")]
@@ -96,81 +37,34 @@ fn test_number(#[case] input: &str) {
     check(crate::number, input, input);
 }
 
-seq_macro::seq!(I in 0..10 {
-    #[rstest::rstest]
-    #(#[case(I)])*
-    fn test_help_escaped_string(#[case] i: usize) {
-        test_help_escaped_string_impl(i);
+#[rstest::rstest]
+fn test_testdata(
+    #[base_dir = "./OpenMetrics/tests/testdata/parsers"]
+    #[files("*")]
+    // https://github.com/prometheus/OpenMetrics/issues/288
+    #[exclude(r#"^help_escaping$"#)]
+    path: PathBuf,
+) {
+    #[derive(Debug, serde::Deserialize)]
+    struct Test {
+        #[serde(rename = "type")]
+        type_: String,
+        file: PathBuf,
+        #[serde(rename = "shouldParse")]
+        should_parse: bool,
     }
-});
-fn test_help_escaped_string_impl(i: usize) {
-    let cases = [
-        // https://github.com/prometheus/OpenMetrics/blob/main/tests/testdata/parsers/help_escaping/metrics
-        (
-            "foo",
-            crate::HelpEscapedString(vec![(
-                "foo",
-                crate::HelpEscapedStringFragment::Normal("foo"),
-            )]),
-        ),
-        (
-            r#"\foo"#,
-            crate::HelpEscapedString(vec![(
-                r#"\foo"#,
-                crate::HelpEscapedStringFragment::Normal(r#"\foo"#),
-            )]),
-        ),
-        (
-            r#"\\foo"#,
-            crate::HelpEscapedString(vec![
-                (r#"\\"#, crate::HelpEscapedStringFragment::Bs),
-                ("foo", crate::HelpEscapedStringFragment::Normal("foo")),
-            ]),
-        ),
-        (
-            r#"foo\\"#,
-            crate::HelpEscapedString(vec![
-                ("foo", crate::HelpEscapedStringFragment::Normal("foo")),
-                (r#"\\"#, crate::HelpEscapedStringFragment::Bs),
-            ]),
-        ),
-        (
-            r#"\\"#,
-            crate::HelpEscapedString(vec![(r#"\\"#, crate::HelpEscapedStringFragment::Bs)]),
-        ),
-        (
-            r#"\n"#,
-            crate::HelpEscapedString(vec![(r#"\n"#, crate::HelpEscapedStringFragment::Lf)]),
-        ),
-        (
-            r#"\\n"#,
-            crate::HelpEscapedString(vec![
-                (r#"\\"#, crate::HelpEscapedStringFragment::Bs),
-                ("n", crate::HelpEscapedStringFragment::Normal("n")),
-            ]),
-        ),
-        (
-            r#"\\\n"#,
-            crate::HelpEscapedString(vec![
-                (r#"\\"#, crate::HelpEscapedStringFragment::Bs),
-                (r#"\n"#, crate::HelpEscapedStringFragment::Lf),
-            ]),
-        ),
-        (
-            r#"\""#,
-            crate::HelpEscapedString(vec![(
-                r#"\""#,
-                crate::HelpEscapedStringFragment::Normal(r#"\""#),
-            )]),
-        ),
-        (
-            r#"\\""#,
-            crate::HelpEscapedString(vec![
-                (r#"\\"#, crate::HelpEscapedStringFragment::Bs),
-                (r#"""#, crate::HelpEscapedStringFragment::Normal(r#"""#)),
-            ]),
-        ),
-    ];
-    let (input, expected) = cases.into_iter().nth(i).unwrap();
-    check(crate::help_escaped_string, input, expected);
+
+    let test =
+        serde_json::from_reader::<_, Test>(File::open(path.join("test.json")).unwrap()).unwrap();
+
+    assert_eq!(test.type_, "text");
+    let input = fs::read_to_string(path.join(&test.file)).unwrap();
+
+    let exposition = crate::exposition::<_, Error<_>>
+        .parse(input.as_str())
+        .finish();
+
+    if test.should_parse {
+        exposition.unwrap();
+    }
 }
