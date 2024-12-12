@@ -9,38 +9,6 @@ use nom::sequence::tuple;
 use nom::{AsChar, IResult, InputTakeAtPosition, Parser};
 use private::Input;
 
-mod private {
-    use nom::{
-        AsChar, Compare, InputIter, InputLength, InputTake, InputTakeAtPosition, Offset, Slice,
-    };
-    use std::ops::{RangeFrom, RangeTo};
-
-    pub trait Input:
-        Clone
-        + Compare<&'static str>
-        + InputIter<Item: AsChar>
-        + InputLength
-        + InputTake
-        + InputTakeAtPosition<Item: AsChar>
-        + Offset
-        + Slice<RangeFrom<usize>>
-        + Slice<RangeTo<usize>>
-    {
-    }
-    impl<I> Input for I where
-        I: Clone
-            + Compare<&'static str>
-            + InputIter<Item: AsChar>
-            + InputLength
-            + InputTake
-            + InputTakeAtPosition<Item: AsChar>
-            + Offset
-            + Slice<RangeFrom<usize>>
-            + Slice<RangeTo<usize>>
-    {
-    }
-}
-
 // RFC 5234 B.1.
 pub const DQUOTE: char = '"';
 pub const SP: char = ' ';
@@ -111,7 +79,7 @@ pub enum MetricDescriptor<I> {
     },
     Help {
         metricname: I,
-        escaped_string: (I, HelpEscapedString<I>),
+        help_escaped_string: (I, HelpEscapedString<I>),
     },
     Unit {
         metricname: I,
@@ -150,12 +118,12 @@ where
             consumed(help_escaped_string),
             char(LF),
         ))
-        .map(
-            |(_, _, _, _, metricname, _, escaped_string, _)| MetricDescriptor::Help {
+        .map(|(_, _, _, _, metricname, _, help_escaped_string, _)| {
+            MetricDescriptor::Help {
                 metricname,
-                escaped_string,
-            },
-        ),
+                help_escaped_string,
+            }
+        }),
         tuple((
             char(HASH),
             char(SP),
@@ -178,15 +146,15 @@ where
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Metric<I> {
-    pub sample: Vec<(I, Sample<I>)>,
+    pub sample: [(I, Sample<I>); 1],
 }
 pub fn metric<I, E>(input: I) -> IResult<I, Metric<I>, E>
 where
     I: Input,
     E: ParseError<I>,
 {
-    many1(consumed(sample))
-        .map(|sample| Metric { sample })
+    consumed(sample)
+        .map(|sample| Metric { sample: [sample] })
         .parse(input)
 }
 
@@ -303,7 +271,7 @@ where
 #[derive(Clone, Debug, PartialEq)]
 pub struct Label<I> {
     pub label_name: I,
-    pub escaped_string: (I, EscapedString<I>),
+    pub help_escaped_string: (I, EscapedString<I>),
 }
 pub fn label<I, E>(input: I) -> IResult<I, Label<I>, E>
 where
@@ -317,9 +285,9 @@ where
         consumed(escaped_string),
         char(DQUOTE),
     ))
-    .map(|(label_name, _, _, escaped_string, _)| Label {
+    .map(|(label_name, _, _, help_escaped_string, _)| Label {
         label_name,
-        escaped_string,
+        help_escaped_string,
     })
     .parse(input)
 }
@@ -350,24 +318,24 @@ where
     recognize_float.parse(input)
 }
 
-pub const EOF: &str = "EOF";
-pub const TYPE: &str = "TYPE";
-pub const HELP: &str = "HELP";
-pub const UNIT: &str = "UNIT";
+const EOF: &str = "EOF";
+const TYPE: &str = "TYPE";
+const HELP: &str = "HELP";
+const UNIT: &str = "UNIT";
 
-pub const COUNTER: &str = "counter";
-pub const GAUGE: &str = "gauge";
-pub const HISTOGRAM: &str = "histogram";
-pub const GAUGEHISTOGRAM: &str = "gaugehistogram";
-pub const STATESET: &str = "stateset";
-pub const INFO: &str = "info";
-pub const SUMMARY: &str = "summary";
-pub const UNKNOWN: &str = "unknown";
+const COUNTER: &str = "counter";
+const GAUGE: &str = "gauge";
+const HISTOGRAM: &str = "histogram";
+const GAUGEHISTOGRAM: &str = "gaugehistogram";
+const STATESET: &str = "stateset";
+const INFO: &str = "info";
+const SUMMARY: &str = "summary";
+const UNKNOWN: &str = "unknown";
 
-pub const BS: char = '\\';
-pub const EQ: char = '=';
-pub const COMMA: char = ',';
-pub const HASH: char = '#';
+const BS: char = '\\';
+const EQ: char = '=';
+const COMMA: char = ',';
+const HASH: char = '#';
 
 fn is_sign(c: char) -> bool {
     c == '-' || c == '+'
@@ -483,6 +451,38 @@ where
 
 fn is_help_normal_char(c: char) -> bool {
     c != LF && c != BS
+}
+
+mod private {
+    use nom::{
+        AsChar, Compare, InputIter, InputLength, InputTake, InputTakeAtPosition, Offset, Slice,
+    };
+    use std::ops::{RangeFrom, RangeTo};
+
+    pub trait Input:
+        Clone
+        + Compare<&'static str>
+        + InputIter<Item: AsChar>
+        + InputLength
+        + InputTake
+        + InputTakeAtPosition<Item: AsChar>
+        + Offset
+        + Slice<RangeFrom<usize>>
+        + Slice<RangeTo<usize>>
+    {
+    }
+    impl<I> Input for I where
+        I: Clone
+            + Compare<&'static str>
+            + InputIter<Item: AsChar>
+            + InputLength
+            + InputTake
+            + InputTakeAtPosition<Item: AsChar>
+            + Offset
+            + Slice<RangeFrom<usize>>
+            + Slice<RangeTo<usize>>
+    {
+    }
 }
 
 #[cfg(test)]
