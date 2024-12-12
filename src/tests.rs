@@ -2,23 +2,33 @@ mod openmetrics_testdata;
 
 use nom::combinator::complete;
 use nom::error::VerboseError;
-use nom::Parser;
+use nom::{Finish, Parser};
 use std::fmt::Debug;
 
 #[test]
 fn test_overall_structure() {
     // https://github.com/prometheus/OpenMetrics/blob/main/specification/OpenMetrics.md#overall-structure
     let input = include_str!("tests/overall_structure.txt");
-    complete::<_, _, VerboseError<_>, _>(crate::exposition)(input).unwrap();
+    complete(crate::exposition)
+        .parse(input)
+        .finish()
+        .map_err(|e| nom::error::convert_error(input, e))
+        .unwrap();
 }
 
 #[track_caller]
-fn check<'a, O, F>(mut f: F, input: &'a str, expected: O)
+fn check<'a, O, F>(f: F, input: &'a str, expected: O)
 where
     O: Debug + PartialEq,
     F: Parser<&'a str, O, VerboseError<&'a str>>,
 {
-    assert_eq!(f.parse(input), Ok(("", expected)));
+    assert_eq!(
+        complete(f)
+            .parse(input)
+            .finish()
+            .map_err(|e| nom::error::convert_error(input, e)),
+        Ok(("", expected))
+    );
 }
 
 seq_macro::seq!(I in 0..3 {

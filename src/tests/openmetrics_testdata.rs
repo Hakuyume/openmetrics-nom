@@ -1,5 +1,6 @@
 use nom::combinator::complete;
-use nom::error::VerboseError;
+use nom::{Finish, Parser};
+use std::collections::{HashMap, HashSet};
 use std::fs::{self, File};
 use std::path::PathBuf;
 
@@ -25,19 +26,21 @@ fn test(
     assert_eq!(test.type_, "text");
     let input = fs::read_to_string(path.join(&test.file)).unwrap();
 
-    let name = path.file_name().unwrap().to_str().unwrap();
-    let should_parse = test.should_parse
-        || name.starts_with("bad_clashing_names_")
-        || name.starts_with("bad_counter_values_")
-        || name.starts_with("bad_exemplars_on_unallowed_")
-        || name.starts_with("bad_grouping_or_ordering_")
-        || name.starts_with("bad_histograms_")
-        || name.starts_with("bad_metadata_in_wrong_place")
-        || name.starts_with("bad_missing_or_invalid_labels_for_a_type_");
+    let exposition = complete(crate::exposition)
+        .parse(input.as_str())
+        .finish()
+        .map_err(|e| nom::error::convert_error(input.as_str(), e));
 
-    if should_parse {
-        complete::<_, _, VerboseError<_>, _>(crate::exposition)(input.as_str()).unwrap();
+    if test.should_parse {
+        let (_, exposition) = exposition.unwrap();
+        assert!(validate(&exposition));
     } else {
-        complete::<_, _, VerboseError<_>, _>(crate::exposition)(input.as_str()).unwrap_err();
+        if let Ok((_, exposition)) = exposition {
+            assert!(!validate(&exposition));
+        }
     }
+}
+
+fn validate(exposition: &crate::Exposition<&str>) -> bool {
+    true
 }

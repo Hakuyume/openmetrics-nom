@@ -10,9 +10,9 @@ use nom::{AsChar, IResult, InputTakeAtPosition, Parser};
 use private::Input;
 
 // RFC 5234 B.1.
-pub const DQUOTE: char = '"';
-pub const SP: char = ' ';
-pub const LF: char = '\n';
+const DQUOTE: char = '"';
+const SP: char = ' ';
+const LF: char = '\n';
 
 // https://github.com/prometheus/OpenMetrics/blob/main/specification/OpenMetrics.md#abnf
 
@@ -271,7 +271,7 @@ where
 #[derive(Clone, Debug, PartialEq)]
 pub struct Label<I> {
     pub label_name: I,
-    pub help_escaped_string: (I, EscapedString<I>),
+    pub escaped_string: (I, EscapedString<I>),
 }
 pub fn label<I, E>(input: I) -> IResult<I, Label<I>, E>
 where
@@ -285,9 +285,9 @@ where
         consumed(escaped_string),
         char(DQUOTE),
     ))
-    .map(|(label_name, _, _, help_escaped_string, _)| Label {
+    .map(|(label_name, _, _, escaped_string, _)| Label {
         label_name,
-        help_escaped_string,
+        escaped_string,
     })
     .parse(input)
 }
@@ -417,7 +417,7 @@ fn is_normal_char(c: char) -> bool {
     c != LF && c != DQUOTE && c != BS
 }
 
-// https://github.com/prometheus/client_python/blob/92b23970f032cbc990aa0e501708c425708e51ea/prometheus_client/parser.py#L32-L41
+// https://github.com/prometheus/OpenMetrics/issues/288
 #[derive(Clone, Debug, PartialEq)]
 pub struct HelpEscapedString<I>(pub Vec<(I, HelpEscapedStringFragment<I>)>);
 #[derive(Clone, Copy, Debug, PartialEq)]
