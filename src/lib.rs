@@ -302,7 +302,7 @@ where
     E: Error<I>,
 {
     context(
-        "labels",
+        "label",
         tuple((
             label_name,
             char(EQ),
