@@ -1,3 +1,5 @@
+pub mod traits;
+
 use nom::branch::alt;
 use nom::bytes::complete::{tag, tag_no_case, take_while};
 use nom::character::complete::{char, satisfy};
@@ -7,7 +9,7 @@ use nom::multi::{fold_many0, fold_many1, many0, many1, separated_list0};
 use nom::number::complete::recognize_float;
 use nom::sequence::tuple;
 use nom::{AsChar, IResult, InputTakeAtPosition, Parser};
-use private::{Error, Input};
+use traits::{Error, Input};
 
 // RFC 5234 B.1.
 const DQUOTE: char = '"';
@@ -490,42 +492,6 @@ where
 
 fn is_help_normal_char(c: char) -> bool {
     c != LF && c != BS
-}
-
-mod private {
-    use nom::error::{ContextError, ParseError};
-    use nom::{
-        AsChar, Compare, InputIter, InputLength, InputTake, InputTakeAtPosition, Offset, Slice,
-    };
-    use std::ops::{RangeFrom, RangeTo};
-
-    pub trait Input:
-        Clone
-        + Compare<&'static str>
-        + InputIter<Item: AsChar>
-        + InputLength
-        + InputTake
-        + InputTakeAtPosition<Item: AsChar>
-        + Offset
-        + Slice<RangeFrom<usize>>
-        + Slice<RangeTo<usize>>
-    {
-    }
-    impl<I> Input for I where
-        I: Clone
-            + Compare<&'static str>
-            + InputIter<Item: AsChar>
-            + InputLength
-            + InputTake
-            + InputTakeAtPosition<Item: AsChar>
-            + Offset
-            + Slice<RangeFrom<usize>>
-            + Slice<RangeTo<usize>>
-    {
-    }
-
-    pub trait Error<I>: ContextError<I> + ParseError<I> {}
-    impl<I, E> Error<I> for E where E: ContextError<I> + ParseError<I> {}
 }
 
 #[cfg(test)]
