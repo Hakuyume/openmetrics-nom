@@ -424,7 +424,7 @@ fn is_label_name_char(c: char) -> bool {
 }
 
 fn is_label_name_initial_char(c: char) -> bool {
-    c.is_ascii_alphabetic()
+    c.is_ascii_alphabetic() || c == '_'
 }
 
 #[derive(Clone, Debug, PartialEq)]
